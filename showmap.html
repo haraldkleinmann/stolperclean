@@ -1,0 +1,919 @@
+  <!DOCTYPE html>
+  <html lang="de">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>POI Karte mit Clustering</title>
+    
+      <!-- Dein eigenes Stylesheet zurest laden -->
+    <link rel="stylesheet" href="./stolperclean.css" />
+
+
+      <!-- Font Awesome CSS lokal einbinden -->
+      <link rel="stylesheet" href="./fontawesome/all.min.css" />
+      <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+      />
+
+      <!-- Leaflet CSS -->
+      <!--    <link rel="stylesheet" href="./leaflet/leaflet.css" /> -->
+      <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@latest/dist/leaflet.css" 
+      />
+   
+      <!-- Leaflet MarkerCluster CSS -->
+
+      <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet.markercluster@latest/dist/MarkerCluster.css"
+      />
+      <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet.markercluster@latest/dist/MarkerCluster.Default.css"
+      />
+
+      <i class="fa fa-plus" id="add-icon"></i>
+
+      <link rel="icon" href="./stolperclean_icon_192.png" type="image/png" />
+
+  
+      <style>
+        .user-location-emoji {
+          font-size: 20px; /* Setzt die Schriftgröße auf 20px (halbe Größe im Vergleich zu 40px) */
+        }
+        #add-button {
+          position: absolute; /* Absolute Positionierung */
+          top: 90px; /* Abstand vom oberen Rand (unterhalb des Location-Buttons) */
+          right: 20px; /* Abstand vom rechten Rand */
+          background-color: #3498db; /* Blauer Hintergrund, wie beim Location-Button */
+          color: white;
+          border-radius: 50%;
+          width: 50px;
+          height: 50px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          cursor: pointer;
+          z-index: 400; /* Stellt sicher, dass der Button vor anderen Elementen angezeigt wird */
+        }
+
+        #add-icon {
+          font-size: 30px; /* Setzt die Größe des Icons */
+          color: #fff; /* Weiß für das Icon */
+        }
+
+        /* Optional: Hover-Effekt für den Add-Button */
+        #add-button:hover {
+          background-color: #2980b9; /* Etwas dunklerer Blauton, wenn der Button gedrückt wird */
+        }
+      </style>
+
+
+
+      <script>
+        // Sicherstellen, dass der Benutzer nicht direkt auf die Unterseite zugreift
+        //   console.log(window.location.pathname)
+        if (window.location.pathname === "/showmap.html") {
+          if (document.referrer === "") {
+            // Der Benutzer kommt direkt von einer anderen Seite (also nicht über Navigation)
+            window.location.href = "/index.html"; // Weiterleitung zur Startseite
+          }
+        }
+      </script>
+    </head>
+    <body>
+      <div id="map"></div>
+      <div id="zoom-level"></div>
+
+      <!-- Hier wird das Zoom-Level angezeigt -->
+
+      <script src="https://unpkg.com/leaflet@latest/dist/leaflet.js"></script>
+      <script src="https://unpkg.com/leaflet.markercluster@latest/dist/leaflet.markercluster.js"></script>
+<script>      
+      let userMarker = null;
+      let watchId = null;
+      let userPosition = null;
+    </script>
+
+    <!-- JS Datei einbinden als letztes, nach allen globalen variablen, damit die dort auch bekannt sind -->
+    <!-- <script src="./stolperclean.js"></script> -->
+
+      <script>
+        // Initialisiere die Karte mit einer Standardposition
+
+        const map = L.map("map").setView([52.469, 13.4249], 10);
+
+        // Füge OpenStreetMap Layer hinzu
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+
+        // Holen des Benutzernamens aus dem Local Storage
+
+        const username = localStorage.getItem("username");
+
+        // // Zeige die Willkommensnachricht an, wenn der Benutzername vorhanden ist
+
+        // Initialisiere MarkerClusterGroup
+        let markers = L.markerClusterGroup({
+          spiderfyOnMaxZoom: true,
+          disableClusteringAtZoom: 19,
+          maxClusterRadius: 50,
+          spiderfyOnClick: false,
+          spiderfyDistanceMultiplier: 3,
+          iconCreateFunction: function (cluster) {
+            const markersCount = cluster.getChildCount();
+
+            // Zähle die Farben der POIs im Cluster
+            let colorCount = {
+              green: 0,
+              yellow: 0,
+              orange: 0,
+              red: 0,
+              gray: 0,
+            };
+
+            // Gehe durch alle POIs im Cluster und zähle die Farbverteilung
+            cluster.getAllChildMarkers().forEach((marker) => {
+              const color = getColorCodeAndText(
+                marker.options.data.last_cleaned
+              ).colorCode;
+              colorCount[color]++;
+            });
+
+            // Bestimme die Farbe, die am häufigsten vorkommt
+            let dominantColor = "gray"; // Standardfarbe
+
+            // Bestimme die Farbe, die am häufigsten vorkommt
+            let maxCount = 0;
+            for (const color in colorCount) {
+              if (colorCount[color] > maxCount) {
+                maxCount = colorCount[color];
+                dominantColor = color;
+              }
+            }
+
+            // Cluster HTML mit der entsprechenden dominanten Farbe
+            const clusterHtml = `
+          <div class="marker-cluster-style ${dominantColor}-cluster">
+            ${markersCount}
+          </div>
+        `;
+
+            return new L.DivIcon({
+              html: clusterHtml,
+              className: "leaflet-marker-cluster",
+              iconSize: new L.Point(30, 30),
+            });
+          },
+        });
+
+        fetch("./fetch_pois.php")
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Fehler: ${response.statusText}`);
+            }
+            return response.json();
+          })
+          .then((data) => {
+            if (data.features) {
+              data.features.forEach((feature) => {
+                const props = feature.properties;
+                const coords = feature.geometry.coordinates;
+
+                let lastCleanedDate = new Date(props.last_cleaned);
+                let colorCode = "gray"; // Default-Farbe für NULL-Werte
+
+                // Wenn last_cleaned vorhanden ist, setze die Farbe basierend auf dem Datum
+                if (props.last_cleaned) {
+                  colorCode = getColorCodeAndText(props.last_cleaned).colorCode;
+                }
+
+                // Wählen des Icons je nach Wert von "caretaker"
+                const iconHtml = getMarkerIcon(props.caretaker, colorCode);
+
+                // Marker erstellen
+                const marker = L.marker([coords[1], coords[0]], {
+                  icon: L.divIcon({
+                    className: "poi-icon " + colorCode, // Wählt die entsprechende Farbe je nach Zustand
+                    html: iconHtml, // Hier wird das entsprechende Icon gesetzt
+                    iconSize: [24, 24], // Größe des Icons
+                  }),
+                  data: props,
+                });
+
+                // Popup binden und Marker zur Karte hinzufügen
+
+                // Popup-Inhalt wird hier mit den aktuellen Daten erstellt
+                const popup = L.popup();
+
+                marker.bindPopup(popup); // Popup wird gebunden, aber noch nicht gefüllt
+
+                // Event-Listener für das Öffnen des Popups
+                marker.on("popupopen", function () {
+                  popup.setContent(getPopupContent(marker)); // Popup-Inhalt wird beim Öffnen gesetzt
+
+                  // Füge hier den Event-Listener hinzu, wenn das Popup geöffnet ist
+                  const checkbox = document.getElementById("caretaker-checkbox");
+                  if (checkbox) {
+                    checkbox.addEventListener("change", function () {
+                      const isChecked = checkbox.checked;
+                      handleCaretakerCheckboxChange(
+                        marker.options.data.gid, // Zugriff auf GID des Markers
+                        isChecked,
+                        marker
+                      );
+                    });
+                  }
+                });
+
+
+
+                // Funktion zum Aktualisieren des Caretakers
+                function handleCaretakerCheckboxChange(poiId, isChecked, marker) {
+                  const username = localStorage.getItem("username");
+
+                  if (!username) {
+                    console.error("Kein Benutzername vorhanden");
+                    return;
+                  }
+
+                  // Bereite die Daten für die Anfrage vor
+                  const data = {
+                    gid: poiId,
+                    caretaker: isChecked ? "anonym" : "", // Setze "anonym" oder entferne den Wert
+                  };
+
+                  // Sende die Anfrage an update_poi_caretaker.php
+                  fetch("update_poi_caretaker.php", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(data),
+                  })
+                    .then((response) => response.json())
+                    .then((result) => {
+                      if (result.success) {
+                        console.log("Caretaker erfolgreich aktualisiert.");
+
+                        // Nur wenn der Update-Vorgang erfolgreich war, aktualisiere das Icon
+                        const colorCode = getColorCodeAndText(
+                          marker.options.data.last_cleaned
+                        ).colorCode;
+                        const iconHtml = getMarkerIcon(
+                          isChecked ? "anonym" : "",
+                          colorCode
+                        ); // Wähle das passende Icon basierend a uf dem neuen Zustand
+
+                        // Aktualisiere das Icon des Markers
+                        marker.setIcon(
+                          L.divIcon({
+                            html: iconHtml,
+                            className: "custom-icon",
+                            iconSize: [30, 30], // Größe des Icons
+                          })
+                        );
+                        marker.options.data.caretaker = isChecked ? "anonym" : "";  // wichtig damit der marker selbst update wird
+                      } else {
+                        console.error(
+                          "Fehler beim Aktualisieren des Caretakers:",
+                          result.error
+                        );
+                      }
+                    })
+                    .catch((error) => {
+                      console.error("Fehler beim Senden der Anfrage:", error);
+                    });
+                }
+
+                markers.addLayer(marker);
+              });
+              map.addLayer(markers);
+            } else {
+              console.error("Keine POIs gefunden");
+            }
+          })
+          .catch((error) => {
+            console.error("Fehler beim Abrufen der POIs:", error.message);
+          });
+
+
+        // Funktion, um den Standort des Nutzers zu setzen und anzuzeigen
+        function setLocation(lat, lon) {
+          userPosition = [lat, lon]; // global
+  //        map.setView([lat, lon], 18); // Karte zentrieren, ohne ein zoomlevel zu setzen
+          //  console.log("Neue Koordinaten:", lat, lon);  // Prüfen, ob die richtigen Koordinaten übergeben werden
+
+          // Prüfen, ob der Marker schon existiert
+          if (userMarker) {
+            userMarker.setLatLng([lat, lon]); // Falls Marker bereits existiert, verschiebe ihn
+          } else {
+            // Wenn der Marker nicht existiert, erstelle ihn
+            userMarker = L.marker(userPosition, {
+              icon: L.divIcon({
+                className: "leaflet-marker-icon", // Nur den Standard-Marker verwenden
+                html: '<div class="user-location-emoji">↖️</div>', // Direkt das Emoji, ohne Punkt
+                iconSize: [20, 20], // Die Größe des gesamten Icons (verkleinert auf 20x20px)
+              }),
+            }).addTo(map);
+            // Marker zur Karte hinzufügen
+          }
+        }
+
+      const locationButton = document.getElementById("location-button");
+      const locationIcon = document.getElementById("location-icon");
+
+
+      // Diese Funktion fragt den Standort ab
+      function getLocation() {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            setLocation(lat, lon);
+            locationButton.classList.add("clicked");
+          },
+          (error) => {
+            console.log("Fehler beim Abrufen des Standorts:", error);
+            // Optional: Hier könnte man auch eine Benachrichtigung einfügen, wenn der Benutzer den Zugriff verweigert hat.
+          }
+        );
+      }
+
+      // Funktion, die das Standort-Tracking aktiviert
+      let trackingPaused = false; // Tracking-Substatus (pausiert oder nicht) -> nur wichtig wenn watchid!=null
+
+      function updateLastCleaned(poiId, buttonElement) {
+        const username = localStorage.getItem("username"); // Benutzernamen aus dem localStorage holen
+
+        if (!username) {
+          console.error("Kein Benutzername vorhanden");
+          return;
+        }
+
+        // console.log("Aktuelle POI-ID: ", poiId); // POI-ID zur Kontrolle in der Konsole
+        // console.log("Benutzername: ", username); // Benutzernamen zur Kontrolle in der Konsole
+
+        const data = {
+          gid: poiId, // POI ID
+          username: username, // Benutzernamen zum PHP-Skript hinzufügen
+          deviceInfo: {
+            os: "Android", // Beispielwerte
+            version: "11",
+            model: "Samsung Galaxy",
+          },
+        };
+
+        // Sende das Update an den Backend-Endpunkt
+        fetch("update_poi.php", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(data),
+        })
+          .then((response) => {
+            console.log("Antwort vom Server erhalten:", response); // Antwort auf Anfrage zur Kontrolle
+            if (!response.ok) {
+              // Wenn die Antwort nicht ok ist, werfen wir einen Fehler
+              throw new Error("Fehler beim Abrufen der Antwort");
+            }
+            return response.json(); // Antwort als JSON behandeln
+          })
+          .then((result) => {
+            console.log("Serverantwort (JSON):", result); // JSON-Antwort zur Kontrolle
+
+            if (result.success) {
+              //          console.log("POI erfolgreich aktualisiert.");  // Erfolgsnachricht
+
+              // Aktualisiere das Icon und das Popup für den POI
+              const marker = markers
+                .getLayers()
+                .find((m) => m.options.data.gid === poiId);
+              if (marker) {
+                // Setze den 'needs_cleaning' Status auf false, wenn der POI gereinigt wurde
+                marker.options.data.needs_cleaning = false; // Aktualisiere den Status des POIs
+                // Speichere den `last_cleaned`-Wert aus der Antwort im Marker-Datenobjekt
+                marker.options.data.last_cleaned = result.last_cleaned; // `last_cleaned` aus der Antwort übernehmen
+
+                /*
+                marker.setIcon(
+                  L.divIcon({
+                    className: "poi-icon " + "green",
+                    iconSize: [24, 24], // Stell sicher, dass die Größe hier auch gesetzt ist
+                  })
+                );
+                */
+                /*
+                const iconHtml = getMarkerIcon(
+                  marker.options.data.caretaker,
+                  "green"
+                ); // Wähle das passende Icon basierend auf dem caretaker- Zustand
+*/
+                // Aktualisiere das Icon des Markers
+                /*
+                marker.setIcon(
+                  L.divIcon({
+                    html: iconHtml,
+                    className: "custom-icon",
+                    iconSize: [30, 30], // Größe des Icons
+                  })
+                );
+*/
+                // Aktualisiere das Cluster, um das Icon neu zu berechnen
+                markers.refreshClusters(); // Um sicherzustellen, dass das Cluster-Icon neu erstellt wird
+
+                // Schließe das Popup nach erfolgreichem Update
+                console.log("Marker gefunden:", marker);
+                marker.closePopup();
+              }
+            } else {
+              console.error(
+                "Fehler beim Aktualisieren des POIs:",
+                result.error
+              ); // Fehlernachricht bei Misserfolg
+            }
+          })
+          .catch((error) => {
+            console.error("Fehler beim Senden der Anfrage:", error); // Fehler, falls Fetch-Request fehlschlägt
+          });
+      } // ende updateLastCleaned
+
+      map.on("click", function (e) {
+        //   console.log('Klick auf die Karte!', e.latlng); // Überprüfen, ob der Klick den korrekten Wert zurückgibt
+        if (localStorage.getItem("locationGranted") === "true") {
+          if (trackingPaused && watchId) {
+            resumeTracking(); // Tracking fortsetzen resume???
+            //  console.log('Tracking fortgesetzt');
+          }
+        }
+        // Sicherstellen, dass das Emoji nach dem Klick die richtige Größe hat
+      });
+
+      function resumeTracking() {
+        trackingPaused = false; // Tracking fortsetzen
+        console.log("in resume Tracking ");
+        // Wenn der Marker entfernt wurde, erstelle ihn erneut
+        if (!userMarker) {
+          userMarker = L.marker(userPosition, {
+            icon: L.divIcon({
+              className: "leaflet-marker-icon", // Nur den Standard-Marker verwenden
+              html: '<div class="user-location-emoji">↖️</div>', // Direkt das Emoji, ohne Punkt
+            }),
+          }).addTo(map); // Marker wieder zur Karte hinzufügen
+        }
+
+        // Falls das Tracking fortgesetzt wird, beginne das Tracking wieder
+        startTracking();
+      }
+
+      markers.on("clusterclick", function (event) {
+        // Tracking pausieren, wenn Spiderfy aktiviert wird
+        pauseTracking();
+      });
+
+      // Funktion, die das Standort-Tracking deaktiviert
+      function stopTracking() {
+        if (watchId) {
+          navigator.geolocation.clearWatch(watchId);
+          watchId = null;
+          userPosition = null; //yyy
+          document
+            .getElementById("location-icon")
+            .classList.remove("pulsieren");
+          // console.log('Tracking gestoppt');
+             // Setze isFirstUpdate zurück, damit beim nächsten Start wieder zentriert wird
+    isFirstUpdate = true;
+        }
+
+        // Marker von der Karte entfernen
+        if (userMarker) {
+          map.removeLayer(userMarker); // Marker von der Karte löschen
+          userMarker = null; // Marker auf null setzen
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        //   console.log("DOMContentLoaded ausgelöst.");
+
+        // Prüfe, ob der localStorage-Wert korrekt ist
+        if (localStorage.getItem("locationGranted") === "true") {
+          //       console.log("locationGranted ist 'true'. Button wird erstellt.");
+
+          // Location Button erstellen
+          const locationButton = document.createElement("div");
+          locationButton.id = "location-button";
+
+          const icon = document.createElement("i");
+          icon.id = "location-icon";
+          icon.className = "fa fa-location-arrow";
+          locationButton.appendChild(icon);
+
+          // Button zum DOM hinzufügen
+          document.body.appendChild(locationButton);
+
+          // Sicherstellen, dass der Button im DOM existiert, bevor der Event Listener hinzugefügt wird
+          if (locationButton) {
+            locationButton.addEventListener("click", handleLocationButtonClick); // Event Listener hinzufügen
+            // Simuliere den Klick, um den Event-Handler auszulösen
+            locationButton.click(); // Diese Zeile simuliert den Klick
+          } else {
+            console.error(
+              "locationButton konnte nicht zum DOM hinzugefügt werden."
+            );
+          }
+          // Zweiten Button erstellen (Plus-Symbol)
+          const addButton = document.createElement("div");
+          addButton.id = "add-button";
+          const addIcon = document.createElement("i");
+          addIcon.id = "add-icon";
+          addIcon.className = "fa fa-plus";
+          addButton.appendChild(addIcon);
+          document.body.appendChild(addButton);
+
+          // Add Button Event Listener
+          addButton.addEventListener("click", function () {
+            const width = window.innerWidth; // Maximale Breite des Bildschirms
+            const height = window.innerHeight; // Maximale Höhe des Bildschirms
+
+            // Öffnet das Popup mit der maximalen Bildschirmgröße
+            const popup = window.open(
+              "validate_address.html",
+              "validateAddressPopup",
+              `width=${width},height=${height},left=0,top=0`
+            );
+          });
+        } else {
+          console.log(
+            "locationGranted ist nicht 'true'. Button wird nicht gerendert."
+          );
+        }
+      }); // Ende DomContentloaded
+
+      // Event-Listener für das Verlassen der Seite - hat performance bei chrine/ios nicht verbesser ist aber gute praxis :-)
+      window.addEventListener("beforeunload", function () {
+        // Bereinigung der Karte und der Event-Listener
+        if (map) {
+          // Entferne alle Event-Listener, die an die Karte gebunden sind
+          map.off(); // Event Listener entfernen
+
+          // Falls du Marker-Daten oder andere Kartenobjekte hast, die entfernt werden müssen
+          if (map && map._layers) {
+            for (let layerId in map._layers) {
+              let layer = map._layers[layerId];
+              if (layer instanceof L.Marker) {
+                map.removeLayer(layer); // Entfernt Marker von der Karte
+              }
+            }
+          }
+          // Entfernen der Karte selbst
+
+          map.remove();
+
+          // Entferne das DOM-Element, das die Karte enthält
+          let mapContainer = document.getElementById("map"); // Beispiel: ID des Kartencontainers
+          if (mapContainer) {
+            mapContainer.innerHTML = ""; // Leere den Container
+          }
+
+          // map = null; // Karte auf null setzen, um die Instanz zu zerstören
+        }
+        // Alle temporären Daten löschen (wie in meiner ersten Antwort)
+        sessionStorage.clear();
+        //     localStorage.clear();
+
+        // Weitere Bereinigungen durchführen, falls nötig
+      });
+
+      function getColorCodeAndText(lastCleanedTimestamp) {
+        let colorCode = "gray"; // Standardfarbe, wenn kein Datum vorliegt
+        let colorText = "(Zeitpunkt unbekannt)"; // Standardtext, wenn kein Datum vorliegt
+
+        // Berechne die Zeitdifferenz in Monaten
+        if (lastCleanedTimestamp) {
+          const lastCleanedDate = new Date(lastCleanedTimestamp);
+          const currentDate = new Date();
+          const diffTime = currentDate - lastCleanedDate;
+          const diffMonths = diffTime / (1000 * 60 * 60 * 24 * 30); // Differenz in Monaten
+
+          // Bestimme den Farbcode und den Text basierend auf der Zeitdifferenz
+          if (diffMonths < 1) {
+            colorCode = "green"; // < 1 Monat
+            colorText = "im letzten Monat";
+          } else if (diffMonths >= 1 && diffMonths < 3) {
+            colorCode = "yellow"; // 1 - 3 Monate
+            colorText = "vor 1 - 3 Monaten";
+          } else if (diffMonths >= 3 && diffMonths < 6) {
+            colorCode = "orange"; // 3 - 6 Monate
+            colorText = "vor 3 - 6 Monaten";
+          } else if (diffMonths >= 6) {
+            colorCode = "red"; // > 6 Monate
+            colorText = "vor mehr als 6 Monaten";
+          }
+        }
+
+        return { colorCode, colorText };
+      }
+      // Funktion, um das passende Icon basierend auf dem Caretaker-Status zu bestimmen
+      function getMarkerIcon(caretakerStatus, colorCode) {
+        let iconHtml = "";
+
+        if (caretakerStatus && caretakerStatus.trim() !== "") {
+          // Wenn caretaker nicht leer ist, benutze das Schutzschild-Icon
+          iconHtml = `<i class="fas fa-shield-alt" style="font-size: 24px; color:${colorCode}; background: none; border: none;"></i>`;
+        } else {
+          // Wenn caretaker leer ist, benutze ein anderes Icon, z.B. ein Dreieck
+          iconHtml = `<i class="fas fa-exclamation-triangle" style="font-size: 24px; color:${colorCode}; background: none; border: none;"></i>`;
+        }
+
+        return iconHtml;
+      }
+
+      function getPopupContent(marker) {
+        const props = marker.options.data; // Zugriff auf die Marker-Daten
+        const latlng = marker.getLatLng(); // Zugriff auf die Koordinaten des Markers (LatLng-Objekt)
+        const coords = latlng ? [latlng.lat, latlng.lng] : null; // Koordinaten extrahieren, falls vorhanden
+
+        let actionContent = "";
+        let caretakerStatus = props.caretaker || ""; // Fallback auf leer, wenn caretaker leer ist
+        let isCaretakerEmpty = caretakerStatus === ""; // Wenn caretaker leer ist
+        let isCaretakerAnonym = caretakerStatus === "anonym"; // Wenn caretaker anonym ist
+        let isCaretakerDefined =
+          caretakerStatus !== "" && caretakerStatus !== "anonym"; // Wenn caretaker definiert und nicht anonym ist
+
+        if (userPosition) {
+          // Überprüfen, ob der Benutzer innerhalb von 99 Metern ist
+          const distance = L.latLng(userPosition).distanceTo(
+            L.latLng(coords[0], coords[1])
+          );
+          if (distance <= 99) {
+            if (isCaretakerEmpty) {
+              actionContent = `
+          <div>
+            <label>
+              <input type="checkbox" id="caretaker-checkbox" /> Ich reinige regelmäßig (Patenschaft)
+            </label>
+          </div>
+          <br><button class="cleaned-button" onclick="updateLastCleaned(${props.gid}, this)">Ist gereinigt</button>
+        `;
+            } else if (isCaretakerAnonym) {
+              actionContent = `
+          <div>
+            <label>
+              <input type="checkbox" id="caretaker-checkbox" checked /> Ich reinige regelmäßig (Patenschaft)
+            </label>
+          </div>
+          <br><button class="cleaned-button" onclick="updateLastCleaned(${props.gid}, this)">Ist gereinigt</button>
+        `;
+            } else {
+              actionContent = `
+          <div>
+            <label>
+              <input type="checkbox" id="caretaker-checkbox" checked disabled /> Reinigung in Putztour (Patenschaft)
+            </label>
+          </div>
+          <br><button class="cleaned-button" onclick="updateLastCleaned(${props.gid}, this)">Ist gereinigt</button>
+        `;
+            }
+          } else {
+            actionContent = `<br><button class="approach-button" onclick="return false;">Zum Markieren den Stolperstein aufsuchen</button>`;
+          }
+        }
+
+        let lastCleanedDate = "N/A";
+        if (props.last_cleaned) {
+          const lastCleanedYear = new Date(props.last_cleaned).getFullYear();
+          if (lastCleanedYear >= 2024) {
+            lastCleanedDate = new Date(props.last_cleaned).toLocaleString();
+          }
+        }
+
+        // Rückgabe des vollständigen Popup-Inhalts
+        if (is_development()) {
+          return `
+    <b>${props.first_name} ${props.last_name}</b><br>
+    Geboren: ${props.year_of_birth}<br>
+    ${props.street} ${props.house_no}<br>
+    <br>Gereinigt ${getColorCodeAndText(props.last_cleaned).colorText}
+    <br> ( ${lastCleanedDate} )
+    ${actionContent}
+  `;
+        } else {
+          return `
+    <b>${props.first_name} ${props.last_name}</b><br>
+    Geboren: ${props.year_of_birth}<br>
+    ${props.street} ${props.house_no}<br>
+    <br>Gereinigt ${getColorCodeAndText(props.last_cleaned).colorText}
+    ${actionContent}
+  `;
+        }
+      }
+
+      function is_development() {
+        // Aktuellen Pfad der Seite bekommen
+        let path = window.location.pathname;
+
+        // Prüfen, ob der Pfad den Text "DEVELOPMENT" enthält
+        return window.location.pathname.includes("DEVELOPMENT");
+      }
+
+
+      // code aus stolperclean.js
+// Funktion zum Überprüfen von gespeicherten Daten (Benutzername und Standort)
+function checkStoredData() {
+    const username = localStorage.getItem("username");
+    const locationGranted = localStorage.getItem("locationGranted");
+  console.log(localStorage.getItem("username"));
+  console.log("!",username);
+    if (username) {
+      document.getElementById("username").value = username;
+    }
+    if (locationGranted === "true") {
+      document.getElementById("location").checked = true;
+    } else {
+      document.getElementById("location").checked = false;
+    }
+  }
+
+// Funktion zum Speichern der Benutzerdaten
+function saveData() {
+  const usernameInput = document.getElementById("username").value;
+  const locationGranted = document.getElementById("location").checked;
+
+  if (usernameInput.length < 6) {
+    showAlert("Der Benutzername muss mindestens 6 Zeichen lang sein"); // Popup bei Fehler
+  } else {
+    localStorage.setItem("username", usernameInput);
+    localStorage.setItem("locationGranted", locationGranted);
+
+    if (locationGranted) {
+      checkLocationPermission(); // Standortberechtigung prüfen
+    } else {
+      window.location.href = "showmap.html";
+    }
+  }
+}
+
+// Funktion, um das Popup anzuzeigen
+function showAlert(message) {
+  // Das Popup anzeigen
+  document.getElementById("alert-popup").style.display = "flex";
+  // Den Text im Popup anpassen
+  document.querySelector("#alert-popup .popup-box p").textContent = message;
+}
+
+// Funktion zur Überprüfung der Standortberechtigung
+function checkLocationPermission() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      function (position) {
+        // Erfolg: Weiterleitung nach showmap.html
+        setTimeout(function () {
+          window.location.href = "showmap.html";
+        }, 30);
+      },
+      function (error) {
+        let errorMessage =
+          "Standort Freigabe bitte in den Einstellungen des Browsers erlauben";
+
+        // Detaillierte Fehlermeldung anzeigen
+        if (error.code === error.PERMISSION_DENIED) {
+          errorMessage =
+            "Standortfreigabe wurde abgelehnt. Bitte aktivieren Sie die Standortfreigabe in den Browsereinstellungen.";
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          errorMessage =
+            "Der Standort konnte nicht ermittelt werden. Bitte überprüfen Sie Ihre Verbindung oder Ihren Standort.";
+        } else if (error.code === error.TIMEOUT) {
+          errorMessage =
+            "Die Anfrage nach dem Standort hat zu lange gedauert. Bitte versuchen Sie es erneut.";
+        } else if (error.code === error.UNKNOWN_ERROR) {
+          errorMessage =
+            "Ein unbekannter Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.";
+        }
+        // Fehlerdetails in der Konsole ausgeben
+        console.error("Geolocation Error Code: ", error.code);
+        console.error("Geolocation Error Message: ", error.message);
+
+        // Zeigt die detaillierte Fehlermeldung im Popup an
+        showAlert(errorMessage);
+      }
+    );
+  } else {
+    // Fehler: Zeigt das Popup an, wenn der Browser keine Geolocation-Unterstützung bietet
+    showAlert("Ihr Browser unterstützt keine Standort Freigabe.");
+  }
+}
+
+
+
+//------------------
+// Funktion, um das Tracking zu pausieren
+
+function pauseTracking() {
+  if (watchId) {
+    //  console.log('Tracking pausiert');
+    navigator.geolocation.clearWatch(watchId); // Standortüberwachung anhalten
+    //      watchId = null;
+    trackingPaused = true; // Tracking pausieren
+
+    // Überprüfen, ob der userMarker existiert und von der Karte entfernen
+    if (userMarker) {
+      map.removeLayer(userMarker); // Marker von der Karte entfernen
+      userMarker = null; // Sicherstellen, dass der Marker nicht mehr existiert
+    }
+  }
+}
+
+let isFirstUpdate = true; // Flag, um sicherzustellen, dass die Karte nur beim ersten Tracking-Start zentriert wird
+//let userMarker; // Marker für den Benutzer
+// let watchId; // ID für die Standortüberwachung
+
+// Funktion zum Starten des Trackings
+function startTracking() {
+  return new Promise((resolve, reject) => {
+    if (navigator.geolocation) {
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          userPosition = [lat, lon];
+
+          // Marker setzen, auch wenn die Karte verschoben wurde
+          if (!userMarker) {
+            // Wenn der Marker noch nicht existiert, erstellen wir ihn
+            userMarker = L.marker(userPosition).addTo(map);
+          } else {
+            // Wenn der Marker bereits existiert, nur die Position aktualisieren
+            userMarker.setLatLng(userPosition);
+          }
+
+          setLocation(lat, lon); // Marker an den neuen Standort setzen
+          document.getElementById("location-icon").classList.add("pulsieren");
+          trackingPaused = false; // Tracking-Status (ob pausiert oder nicht)
+
+          // Karte nur beim ersten Update auf die Benutzerposition zentrieren
+          if (isFirstUpdate) {
+            map.flyTo(userPosition, 17); // Karte zentrieren, wenn der Standort zum ersten Mal verfügbar ist
+            isFirstUpdate = false; // Flag setzen, um zu verhindern, dass die Karte bei späteren Updates neu zentriert wird
+          }
+
+          resolve(userPosition); // Promise auflösen, wenn der Standort abgerufen wurde
+        },
+        (error) => {
+          console.log("Fehler beim Abrufen des Standorts:", error);
+          reject(error); // Promise ablehnen, wenn ein Fehler auftritt
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000, // Maximale Wartezeit für den Standort (10 Sekunden)
+          maximumAge: 1000 // Maximale Zeit, die der Standort alt sein kann (1 Sekunde)
+        }
+      );
+    } else {
+      console.log("Geolocation wird von diesem Browser nicht unterstützt.");
+      reject(new Error("Geolocation nicht unterstützt")); // Ablehnung, falls Geolocation nicht unterstützt wird
+    }
+  });
+}
+/*
+// Funktion zum Stoppen des Trackings  -> stand schon in showmap.html
+function stopTracking() {
+  if (watchId) {
+    navigator.geolocation.clearWatch(watchId); // stoppt die Standortüberwachung
+    watchId = null; // Setzt die watchId zurück
+    console.log("Tracking gestoppt.");
+
+    // Setze isFirstUpdate zurück, damit beim nächsten Start wieder zentriert wird
+    isFirstUpdate = true;
+  }
+}
+*/
+
+// Funktion, die beim Klicken auf den Standort-Button ausgeführt wird
+async function handleLocationButtonClick() {
+  const locationButton = document.getElementById("location-button");
+  map.closePopup(); // yyy
+  
+  if (watchId) {
+    // Wenn Tracking läuft, stoppen
+    stopTracking();
+    locationButton.classList.remove("clicked");
+  } else {
+    // Wenn Tracking nicht läuft, starten
+    try {
+      const userPosition = await startTracking(); // Warten, bis der Standort verfügbar ist
+      locationButton.classList.add("clicked");
+    } catch (error) {
+      console.log("Fehler beim Abrufen des Standorts:", error);
+    }
+  }
+}
+
+</script>
+
+  </body>
+</html>
