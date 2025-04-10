@@ -6,32 +6,35 @@
       <title>POI Karte mit Clustering</title>
     
       <!-- Dein eigenes Stylesheet zurest laden -->
-    <link rel="stylesheet" href="./stolperclean.css" />
+    <!-- <link rel="stylesheet" href="./stolperclean.css" /> -->
+    <link id="dynamic-stylesheet" rel="stylesheet" href="./stolperclean.css" />
 
 
       <!-- Font Awesome CSS lokal einbinden -->
       <link rel="stylesheet" href="./fontawesome/all.min.css" />
       <link
         rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
+        href="https://cdn.jsdelivr.net/npm/ajax/libs/font-awesome/5.15.4/css/all.min.css"
       />
 
       <!-- Leaflet CSS -->
       <!--    <link rel="stylesheet" href="./leaflet/leaflet.css" /> -->
       <link
         rel="stylesheet"
-        href="https://unpkg.com/leaflet@latest/dist/leaflet.css" 
+        href="https://cdn.jsdelivr.net/npm/leaflet@latest/dist/leaflet.css"
       />
+    
+
    
       <!-- Leaflet MarkerCluster CSS -->
 
       <link
         rel="stylesheet"
-        href="https://unpkg.com/leaflet.markercluster@latest/dist/MarkerCluster.css"
+        href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@latest/dist/MarkerCluster.css"
       />
       <link
         rel="stylesheet"
-        href="https://unpkg.com/leaflet.markercluster@latest/dist/MarkerCluster.Default.css"
+        href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@latest/dist/MarkerCluster.Default.css"
       />
 
       <i class="fa fa-plus" id="add-icon"></i>
@@ -39,36 +42,7 @@
       <link rel="icon" href="./stolperclean_icon_192.png" type="image/png" />
 
   
-      <style>
-        .user-location-emoji {
-          font-size: 20px; /* Setzt die Schriftgröße auf 20px (halbe Größe im Vergleich zu 40px) */
-        }
-        #add-button {
-          position: absolute; /* Absolute Positionierung */
-          top: 90px; /* Abstand vom oberen Rand (unterhalb des Location-Buttons) */
-          right: 20px; /* Abstand vom rechten Rand */
-          background-color: #3498db; /* Blauer Hintergrund, wie beim Location-Button */
-          color: white;
-          border-radius: 50%;
-          width: 50px;
-          height: 50px;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          cursor: pointer;
-          z-index: 400; /* Stellt sicher, dass der Button vor anderen Elementen angezeigt wird */
-        }
-
-        #add-icon {
-          font-size: 30px; /* Setzt die Größe des Icons */
-          color: #fff; /* Weiß für das Icon */
-        }
-
-        /* Optional: Hover-Effekt für den Add-Button */
-        #add-button:hover {
-          background-color: #2980b9; /* Etwas dunklerer Blauton, wenn der Button gedrückt wird */
-        }
-      </style>
+     
 
 
 
@@ -89,8 +63,8 @@
 
       <!-- Hier wird das Zoom-Level angezeigt -->
 
-      <script src="https://unpkg.com/leaflet@latest/dist/leaflet.js"></script>
-      <script src="https://unpkg.com/leaflet.markercluster@latest/dist/leaflet.markercluster.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/leaflet@latest/dist/leaflet.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@latest/dist/leaflet.markercluster.js"></script>
 <script>      
       let userMarker = null;
       let watchId = null;
@@ -136,7 +110,7 @@
               gray: 0,
             };
 
-            // Gehe durch alle POIs im Cluster und zähle die Farbverteilung
+            // Gehe  durch alle POIs im Cluster und zähle die Farbverteilung
             cluster.getAllChildMarkers().forEach((marker) => {
               const color = getColorCodeAndText(
                 marker.options.data.last_cleaned
@@ -348,100 +322,83 @@
       let trackingPaused = false; // Tracking-Substatus (pausiert oder nicht) -> nur wichtig wenn watchid!=null
 
       function updateLastCleaned(poiId, buttonElement) {
-        const username = localStorage.getItem("username"); // Benutzernamen aus dem localStorage holen
+  const username = localStorage.getItem("username"); // Benutzernamen aus dem localStorage holen
 
-        if (!username) {
-          console.error("Kein Benutzername vorhanden");
-          return;
+  if (!username) {
+    console.error("Kein Benutzername vorhanden");
+    return;
+  }
+
+  const data = {
+    gid: poiId, // POI ID
+    username: username, // Benutzernamen zum PHP-Skript hinzufügen
+    deviceInfo: {
+      os: "Android", // Beispielwerte
+      version: "11",
+      model: "Samsung Galaxy",
+    },
+  };
+
+  // Sende das Update an den Backend-Endpunkt
+  fetch("update_poi.php", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("Fehler beim Abrufen der Antwort");
+      }
+      return response.json(); // Antwort als JSON behandeln
+    })
+    .then((result) => {
+      console.log("Serverantwort (JSON):", result); // JSON-Antwort zur Kontrolle
+
+      if (result.success) {
+        // POI erfolgreich aktualisiert
+
+        // Finde den Marker anhand der POI-ID
+        const marker = markers
+          .getLayers()
+          .find((m) => m.options.data.gid === poiId);
+
+        if (marker) {
+          // Setze den 'needs_cleaning' Status auf false, wenn der POI gereinigt wurde
+          marker.options.data.needs_cleaning = false;
+          // Speichere den `last_cleaned`-Wert aus der Antwort im Marker-Datenobjekt
+          marker.options.data.last_cleaned = result.last_cleaned;
+
+          // Berechne den Farbcode basierend auf `last_cleaned`
+          const { colorCode, colorText } = getColorCodeAndText(marker.options.data.last_cleaned);
+
+          // Verwende den berechneten Farbcode, um das passende Icon zu generieren
+          const iconHtml = getMarkerIcon(marker.options.data.caretaker, colorCode);
+
+          // Aktualisiere das Icon des Markers
+          marker.setIcon(
+            L.divIcon({
+              html: iconHtml,
+              className: "custom-icon",
+              iconSize: [30, 30], // Größe des Icons
+            })
+          );
+
+          // Aktualisiere das Cluster-Icon
+          markers.refreshClusters();
+
+          // Schließe das Popup nach erfolgreichem Update
+          marker.closePopup();
         }
-
-        // console.log("Aktuelle POI-ID: ", poiId); // POI-ID zur Kontrolle in der Konsole
-        // console.log("Benutzername: ", username); // Benutzernamen zur Kontrolle in der Konsole
-
-        const data = {
-          gid: poiId, // POI ID
-          username: username, // Benutzernamen zum PHP-Skript hinzufügen
-          deviceInfo: {
-            os: "Android", // Beispielwerte
-            version: "11",
-            model: "Samsung Galaxy",
-          },
-        };
-
-        // Sende das Update an den Backend-Endpunkt
-        fetch("update_poi.php", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(data),
-        })
-          .then((response) => {
-            console.log("Antwort vom Server erhalten:", response); // Antwort auf Anfrage zur Kontrolle
-            if (!response.ok) {
-              // Wenn die Antwort nicht ok ist, werfen wir einen Fehler
-              throw new Error("Fehler beim Abrufen der Antwort");
-            }
-            return response.json(); // Antwort als JSON behandeln
-          })
-          .then((result) => {
-            console.log("Serverantwort (JSON):", result); // JSON-Antwort zur Kontrolle
-
-            if (result.success) {
-              //          console.log("POI erfolgreich aktualisiert.");  // Erfolgsnachricht
-
-              // Aktualisiere das Icon und das Popup für den POI
-              const marker = markers
-                .getLayers()
-                .find((m) => m.options.data.gid === poiId);
-              if (marker) {
-                // Setze den 'needs_cleaning' Status auf false, wenn der POI gereinigt wurde
-                marker.options.data.needs_cleaning = false; // Aktualisiere den Status des POIs
-                // Speichere den `last_cleaned`-Wert aus der Antwort im Marker-Datenobjekt
-                marker.options.data.last_cleaned = result.last_cleaned; // `last_cleaned` aus der Antwort übernehmen
-
-                /*
-                marker.setIcon(
-                  L.divIcon({
-                    className: "poi-icon " + "green",
-                    iconSize: [24, 24], // Stell sicher, dass die Größe hier auch gesetzt ist
-                  })
-                );
-                */
-                /*
-                const iconHtml = getMarkerIcon(
-                  marker.options.data.caretaker,
-                  "green"
-                ); // Wähle das passende Icon basierend auf dem caretaker- Zustand
-*/
-                // Aktualisiere das Icon des Markers
-                /*
-                marker.setIcon(
-                  L.divIcon({
-                    html: iconHtml,
-                    className: "custom-icon",
-                    iconSize: [30, 30], // Größe des Icons
-                  })
-                );
-*/
-                // Aktualisiere das Cluster, um das Icon neu zu berechnen
-                markers.refreshClusters(); // Um sicherzustellen, dass das Cluster-Icon neu erstellt wird
-
-                // Schließe das Popup nach erfolgreichem Update
-                console.log("Marker gefunden:", marker);
-                marker.closePopup();
-              }
-            } else {
-              console.error(
-                "Fehler beim Aktualisieren des POIs:",
-                result.error
-              ); // Fehlernachricht bei Misserfolg
-            }
-          })
-          .catch((error) => {
-            console.error("Fehler beim Senden der Anfrage:", error); // Fehler, falls Fetch-Request fehlschlägt
-          });
-      } // ende updateLastCleaned
+      } else {
+        console.error("Fehler beim Aktualisieren des POIs:", result.error);
+      }
+    })
+    .catch((error) => {
+      console.error("Fehler beim Senden der Anfrage:", error); // Fehler, falls Fetch-Request fehlschlägt
+    });
+}
 
       map.on("click", function (e) {
         //   console.log('Klick auf die Karte!', e.latlng); // Überprüfen, ob der Klick den korrekten Wert zurückgibt
@@ -499,6 +456,9 @@
 
       document.addEventListener("DOMContentLoaded", function () {
         //   console.log("DOMContentLoaded ausgelöst.");
+        var stylesheet = document.getElementById('dynamic-stylesheet');
+      var timestamp = new Date().getTime(); // Holen des aktuellen Zeitstempels
+      stylesheet.href = './stolperclean.css?v=' + timestamp; // Zeitstempel anhängen
 
         // Prüfe, ob der localStorage-Wert korrekt ist
         if (localStorage.getItem("locationGranted") === "true") {
@@ -615,6 +575,7 @@
             colorText = "vor mehr als 6 Monaten";
           }
         }
+        
 
         return { colorCode, colorText };
       }
@@ -650,6 +611,7 @@
           const distance = L.latLng(userPosition).distanceTo(
             L.latLng(coords[0], coords[1])
           );
+//          alert("Distance: " + distance.toFixed(2) + " meters");
           if (distance <= 99) {
             if (isCaretakerEmpty) {
               actionContent = `
@@ -679,7 +641,7 @@
           <br><button class="cleaned-button" onclick="updateLastCleaned(${props.gid}, this)">Ist gereinigt</button>
         `;
             }
-          } else {
+          } else { // distance too big
             actionContent = `<br><button class="approach-button" onclick="return false;">Zum Markieren den Stolperstein aufsuchen</button>`;
           }
         }
@@ -843,21 +805,27 @@ function startTracking() {
           userPosition = [lat, lon];
 
           // Marker setzen, auch wenn die Karte verschoben wurde
+  //       updateUserMarker(userPosition, map); 
+        /*
+
           if (!userMarker) {
             // Wenn der Marker noch nicht existiert, erstellen wir ihn
             userMarker = L.marker(userPosition).addTo(map);
+
+
           } else {
             // Wenn der Marker bereits existiert, nur die Position aktualisieren
             userMarker.setLatLng(userPosition);
           }
-
+*/
           setLocation(lat, lon); // Marker an den neuen Standort setzen
           document.getElementById("location-icon").classList.add("pulsieren");
           trackingPaused = false; // Tracking-Status (ob pausiert oder nicht)
 
           // Karte nur beim ersten Update auf die Benutzerposition zentrieren
           if (isFirstUpdate) {
-            map.flyTo(userPosition, 17); // Karte zentrieren, wenn der Standort zum ersten Mal verfügbar ist
+          map.setView([lat, lon], 17);
+//           map.flyTo(userPosition, 17); // Anfliegen ganz witzig aber nervt zB beim anlegen von steinen
             isFirstUpdate = false; // Flag setzen, um zu verhindern, dass die Karte bei späteren Updates neu zentriert wird
           }
 
@@ -879,6 +847,24 @@ function startTracking() {
     }
   });
 }
+// Funktion zum Erstellen oder Aktualisieren des Benutzermarkers
+function updateUserMarker(userPosition, map) {
+  // Überprüfen, ob der userMarker bereits existiert
+  if (!userMarker) {
+    // Wenn der Marker noch nicht existiert, erstelle ihn
+    userMarker = L.marker(userPosition, {
+      icon: L.divIcon({
+        className: "leaflet-marker-icon", // Standard Marker
+        html: '<div class="user-location-emoji">↖️</div>', // Benutzerdefiniertes Emoji als Marker
+      }),
+    }).addTo(map); // Füge den Marker zur Karte hinzu
+  } else {
+    // Wenn der Marker bereits existiert, aktualisiere seine Position
+    userMarker.setLatLng(userPosition); // Setze die neue Position des Markers
+  }
+}
+
+
 /*
 // Funktion zum Stoppen des Trackings  -> stand schon in showmap.html
 function stopTracking() {
