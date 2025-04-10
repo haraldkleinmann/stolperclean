@@ -42,8 +42,6 @@
       <link rel="icon" href="./stolperclean_icon_192.png" type="image/png" />
 
   
-     
-
 
 
       <script>
@@ -463,50 +461,10 @@
         // Prüfe, ob der localStorage-Wert korrekt ist
         if (localStorage.getItem("locationGranted") === "true") {
           //       console.log("locationGranted ist 'true'. Button wird erstellt.");
+// Füge die benutzerdefinierte Steuerung zur Karte hinzu
+map.addControl(new CustomControl());
 
-          // Location Button erstellen
-          const locationButton = document.createElement("div");
-          locationButton.id = "location-button";
-
-          const icon = document.createElement("i");
-          icon.id = "location-icon";
-          icon.className = "fa fa-location-arrow";
-          locationButton.appendChild(icon);
-
-          // Button zum DOM hinzufügen
-          document.body.appendChild(locationButton);
-
-          // Sicherstellen, dass der Button im DOM existiert, bevor der Event Listener hinzugefügt wird
-          if (locationButton) {
-            locationButton.addEventListener("click", handleLocationButtonClick); // Event Listener hinzufügen
-            // Simuliere den Klick, um den Event-Handler auszulösen
-            locationButton.click(); // Diese Zeile simuliert den Klick
-          } else {
-            console.error(
-              "locationButton konnte nicht zum DOM hinzugefügt werden."
-            );
-          }
-          // Zweiten Button erstellen (Plus-Symbol)
-          const addButton = document.createElement("div");
-          addButton.id = "add-button";
-          const addIcon = document.createElement("i");
-          addIcon.id = "add-icon";
-          addIcon.className = "fa fa-plus";
-          addButton.appendChild(addIcon);
-          document.body.appendChild(addButton);
-
-          // Add Button Event Listener
-          addButton.addEventListener("click", function () {
-            const width = window.innerWidth; // Maximale Breite des Bildschirms
-            const height = window.innerHeight; // Maximale Höhe des Bildschirms
-
-            // Öffnet das Popup mit der maximalen Bildschirmgröße
-            const popup = window.open(
-              "validate_address.html",
-              "validateAddressPopup",
-              `width=${width},height=${height},left=0,top=0`
-            );
-          });
+   
         } else {
           console.log(
             "locationGranted ist nicht 'true'. Button wird nicht gerendert."
@@ -898,6 +856,57 @@ async function handleLocationButtonClick() {
     }
   }
 }
+var CustomControl = L.Control.extend({
+    options: {
+        position: 'topright' // Position der Steuerung auf der Karte
+    },
+    onAdd: function(map) {
+        var container = L.DomUtil.create('div', 'leaflet-bar');
+        container.style.backgroundColor = 'white';
+        container.style.padding = '10px';
+        container.style.borderRadius = '5px';
+
+        // Location Button erstellen
+        const locationButton = L.DomUtil.create('div', 'leaflet-control-location', container);
+        locationButton.innerHTML = '<i class="fa fa-location-arrow"></i>';
+        locationButton.style.backgroundColor = '#3498db';
+        locationButton.style.color = 'white';
+        locationButton.style.borderRadius = '50%';
+        locationButton.style.width = '50px';
+        locationButton.style.height = '50px';
+        locationButton.style.display = 'flex';
+        locationButton.style.justifyContent = 'center';
+        locationButton.style.alignItems = 'center';
+        locationButton.style.cursor = 'pointer';
+        locationButton.addEventListener('click', handleLocationButtonClick);
+
+        // Add Button erstellen
+        const addButton = L.DomUtil.create('div', 'leaflet-control-add', container);
+        addButton.innerHTML = '<i class="fa fa-plus"></i>';
+        addButton.style.backgroundColor = '#3498db';
+        addButton.style.color = 'white';
+        addButton.style.borderRadius = '50%';
+        addButton.style.width = '50px';
+        addButton.style.height = '50px';
+        addButton.style.display = 'flex';
+        addButton.style.justifyContent = 'center';
+        addButton.style.alignItems = 'center';
+        addButton.style.cursor = 'pointer';
+        addButton.addEventListener('click', function() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const popup = window.open(
+                'validate_address.html',
+                'validateAddressPopup',
+                `width=${width},height=${height},left=0,top=0`
+            );
+        });
+
+        return container;
+    }
+});
+
+
 
 </script>
 
